@@ -11,6 +11,8 @@
 /lib
 /umd
 
+# images
+/images
 # misc
 .DS_Store
 .env.local
@@ -21,3 +23,6 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+#Visual Code
+.vscode

@@ -7,7 +7,7 @@ import OrbitControls from './utils/OrbitControls'
 import injectSheet from 'react-jss'
 import styles from './styles'
 import sleeping from '../models/ZZZ.gltf'
-import { debounce } from './utils'
+import { debounce, gltfLoader } from './utils'
 import VertexStudioMaterial from './utils/VextexStudioMaterial'
 
 class Monster3DProfile extends Component {
@@ -23,7 +23,7 @@ class Monster3DProfile extends Component {
     this.prevTime = 0
   }
 
-  componentDidMount() {
+ componentDidMount() {
     const { background, path, ambientIntensity, ambientColor, directIntensity, directColor, zoom } = this.props
 
     // default values
@@ -50,7 +50,7 @@ class Monster3DProfile extends Component {
     this.controls.update()
 
     // add renderer
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true, premultipliedAlpha: false })
     this.renderer.setClearColor(canvasBackground.color, canvasBackground.alpha)
     this.renderer.setPixelRatio(window.devicePixelRatio)
     this.renderer.setSize(width, height)
@@ -72,27 +72,26 @@ class Monster3DProfile extends Component {
     // make it child of the camera and add it to the scene
     this.camera.add(this.pointLight)
     this.scene.add(this.camera)
-
+    
     VertexStudioMaterial()
-      .then(VertexStudioMaterial => {
+      .then( async VertexStudioMaterial  => {
         this.monsterMaterial = VertexStudioMaterial
-
-        // loading monster with GLTF loader
-        const gltfLoader = new GLTFLoader()
-        gltfLoader.load(
-          path,
-          this.loadMonster,
-          // TODO: add a loader.
-          event => {
-            const percentage = (event.loaded / event.total) * 100
-            console.log(`Loading 3D monster model... ${Math.round(percentage)}%`)
-          },
-          console.error.bind(console)
-        )
+        try {
+          const mons = await gltfLoader(path, this.loadMonster);
+        } catch (error) {
+          console.log(error)
+        }
       })
 
     // start scene
     this.start()
+  }
+
+  shouldComponentUpdate(newProps, newState){    
+    //return !( this.props.path === newProps.path );
+    //TODO find a way to update animations while update monsters
+    // The select element is changing when you select the same value?
+    return true;
   }
 
   componentWillUnmount() {
@@ -159,6 +158,9 @@ class Monster3DProfile extends Component {
     this.camera.near = size / 1000
     this.camera.far = size * 1000
 
+    //restart position of monster
+    //this.monster.position.set(0,0,0);
+
     // set monster initial position
     this.monster.position.x += (this.monster.position.x - center.x)
     this.monster.position.y += (this.monster.position.y - center.y)
@@ -199,6 +201,8 @@ class Monster3DProfile extends Component {
 
     // set camera initial position
     this.camera.lookAt(center)
+    //default camera position:
+    this.camera.position.set(0,0,0);
     this.camera.position.z += size
 
     // set camera position relative to initial position
@@ -212,12 +216,21 @@ class Monster3DProfile extends Component {
     // backup camera to restore it later
     this.backupCamera = this.camera.clone()
 
-    // add scene
+
+    //saving the reference of the showing monster
+    this.lastMonster = this.monster;
+
+    // add monster to scene
     this.scene.add(this.monster)
 
     // start animation
     this.monsterMixer = new THREE.AnimationMixer(this.monster)
     this.loadSleepingObject()
+  }
+
+  dettachMonster = () => {
+    this.camera.remove(this.sleepingObject)
+    this.scene.remove(this.lastMonster);
   }
 
   loadSleepingObject = () => {
@@ -257,7 +270,7 @@ class Monster3DProfile extends Component {
         } else {
           this.camera.remove(this.sleepingObject)
         }
-        // darken or light the monster according to current 'action'
+        // darken or light the monster according to current 'action' -----
         this.monsterLightColor(action)
         this.changeStateAnimation()
       },
@@ -304,10 +317,12 @@ class Monster3DProfile extends Component {
   // darkens or lights the monster, and adds
   // or not, the sleeping z's model.
   monsterLightColor = (action) => {
+    console.log(action);
     if (
       action === ActionType.SLEEPING ||
       action === ActionType.DEAD
     ) {
+      console.log("Sleeping or dead")
       this.darkenMonster()
       if (action !== ActionType.DEAD) {
         if (this.sleepingObject) {
@@ -320,6 +335,7 @@ class Monster3DProfile extends Component {
         this.sleepingMixer &&
           this.sleepingMixer.stopAllAction()
         this.camera.remove(this.sleepingObject)
+        console.log("was the Sleeping object remove?")
       }
     } else {
       this.lightMonster()
@@ -329,15 +345,25 @@ class Monster3DProfile extends Component {
     }
   }
 
-  applyPropertyUpdate = () => {
-    const { autoRotate, autoRotateSpeed, action } = this.props
+  applyPropertyUpdate = async () => {
+    const { autoRotate, autoRotateSpeed, action, path } = this.props
 
     // controls
     this.controls.autoRotate = autoRotate
     this.controls.autoRotateSpeed = autoRotateSpeed
 
+    this.dettachMonster();   
+    //loading the new monster.
+    //Refactoring late
+    try {
+      const mons = await gltfLoader(path, this.loadMonster);
+    } catch (error) {
+      console.log(error)
+    }
+
     // darken or light the monster according to current 'action'
     this.monsterLightColor(action)
+    
   }
 
   // plays the requested animation by the 'action' prop
@@ -376,8 +402,8 @@ class Monster3DProfile extends Component {
   }
 
   render() {
-    const { size, classes } = this.props
-
+    const { size, classes, path } = this.props
+    
     if (this.mount) {
       this.applyPropertyUpdate()
       this.changeStateAnimation()
